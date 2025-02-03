@@ -1,0 +1,90 @@
+import cv2
+import mediapipe as mp
+import requests
+
+# Initialize MediaPipe for Hand Tracking
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
+
+# Initialize video capture for webcam
+cap = cv2.VideoCapture(0)  # Change to your webcam index if needed
+
+# HTTP request URLs for gestures
+HTTP_URLS = {
+    "Red ON": "http://esp32_ip/rgb2/red/on",
+    "Red OFF": "http://esp32_ip/rgb2/red/off",
+    "Green ON": "http://esp32_ip/rgb2/green/on",
+    "Green OFF": "http://esp32_ip/rgb2/green/off",
+    "Blue ON": "http://esp32_ip/rgb2/blue/on",
+    "Blue OFF": "http://esp32_ip/rgb2/blue/off",
+}
+
+# Function to send HTTP request
+def send_http_request(gesture):
+    try:
+        if gesture == "Red (Thumb + Index)":
+            requests.get(HTTP_URLS["Red ON"])
+            requests.get(HTTP_URLS["Green OFF"])
+            requests.get(HTTP_URLS["Blue OFF"])
+        elif gesture == "Blue (Thumb + Middle)":
+            requests.get(HTTP_URLS["Blue ON"])
+            requests.get(HTTP_URLS["Red OFF"])
+            requests.get(HTTP_URLS["Green OFF"])
+        elif gesture == "Green (Thumb + Ring)":
+            requests.get(HTTP_URLS["Green ON"])
+            requests.get(HTTP_URLS["Red OFF"])
+            requests.get(HTTP_URLS["Blue OFF"])
+    except requests.RequestException as e:
+        print(f"HTTP request failed: {e}")
+
+# Function to detect hand gestures
+def detect_gesture(frame):
+    # Convert the frame to RGB
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = hands.process(rgb_frame)
+    gesture_detected = "No Gesture"  # Default gesture
+
+    if results.multi_hand_landmarks:
+        for hand_landmarks in results.multi_hand_landmarks:
+            # Calculate the distances between the thumb and other fingertips
+            thumb_tip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
+            index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            middle_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+            ring_tip = hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
+            
+            # Distance calculation (we use simple distance check for gesture)
+            index_dist = ((thumb_tip.x - index_tip.x) ** 2 + (thumb_tip.y - index_tip.y) ** 2) ** 0.5
+            middle_dist = ((thumb_tip.x - middle_tip.x) ** 2 + (thumb_tip.y - middle_tip.y) ** 2) ** 0.5
+            ring_dist = ((thumb_tip.x - ring_tip.x) ** 2 + (thumb_tip.y - ring_tip.y) ** 2) ** 0.5
+
+            # Gesture conditions
+            if index_dist < 0.05:  # Thumb and index close (Red Gesture)
+                gesture_detected = "Red (Thumb + Index)"
+            elif middle_dist < 0.05:  # Thumb and middle close (Blue Gesture)
+                gesture_detected = "Blue (Thumb + Middle)"
+            elif ring_dist < 0.05:  # Thumb and ring close (Green Gesture)
+                gesture_detected = "Green (Thumb + Ring)"
+
+    send_http_request(gesture_detected)  # Send HTTP request for the detected gesture
+    return frame
+
+# Start video capture
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        print("Failed to capture frame. Exiting...")
+        break
+
+    # Detect gestures in the frame
+    frame = detect_gesture(frame)
+
+    # Display the frame with gesture detection
+    cv2.imshow("Live Feed - Hand Gesture Detection", frame)
+
+    # Press 'q' to exit (removed the waitKey causing issues)
+    if cv2.getWindowProperty("Live Feed - Hand Gesture Detection", 0) < 0:
+        break
+
+# Release the capture and close windows
+cap.release()
+cv2.destroyAllWindows()
