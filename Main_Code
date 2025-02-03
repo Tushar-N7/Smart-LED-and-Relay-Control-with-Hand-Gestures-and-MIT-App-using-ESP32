@@ -1,0 +1,393 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+// Replace with your network credentials
+const char* ssid = "OPPO Reno11 5G";         // Your Wi-Fi SSID
+const char* password = "skull2005";  // Your Wi-Fi password
+
+WebServer server(80); // Create a web server on port 80
+
+// Pin configuration for RGB LEDs and Relay
+const int led1PinRed = 23;   // RGB LED 1 Red pin
+const int led1PinGreen = 22; // RGB LED 1 Green pin
+const int led1PinBlue = 21;  // RGB LED 1 Blue pin
+const int led2PinRed = 19;   // RGB LED 2 Red pin
+const int led2PinGreen = 18; // RGB LED 2 Green pin
+const int led2PinBlue = 15;  // RGB LED 2 Blue pin
+const int relayPin = 27;     // Relay control pin
+
+// Function prototypes
+void handleRoot();
+void handleLed1();
+void handleLed2();
+void handleRelay();
+void setLedColor(int redPin, int greenPin, int bluePin, int red, int green, int blue);
+
+void setup() {
+    Serial.begin(115200); // Start the Serial communication
+    WiFi.begin(ssid, password); // Connect to Wi-Fi
+
+    // Wait for connection
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.println("Connecting to WiFi...");
+    }
+    Serial.println("Connected to WiFi");
+
+    // Initialize LED and relay pins
+    pinMode(led1PinRed, OUTPUT);
+    pinMode(led1PinGreen, OUTPUT);
+    pinMode(led1PinBlue, OUTPUT);
+    pinMode(led2PinRed, OUTPUT);
+    pinMode(led2PinGreen, OUTPUT);
+    pinMode(led2PinBlue, OUTPUT);
+    pinMode(relayPin, OUTPUT);
+
+    // Define routes for web server
+    server.on("/", handleRoot); // Handle root URL
+    server.on("/led1", handleLed1); // Handle LED 1 control
+    server.on("/led2", handleLed2); // Handle LED 2 control
+    server.on("/relay", handleRelay); // Handle Relay control
+
+    // Start the server
+    server.begin();
+    Serial.println("HTTP server started");
+}
+
+void loop() {
+    server.handleClient(); // Handle client requests
+}
+
+// Handle the root URL
+void handleRoot() {
+    server.send(200, "text/plain", "Welcome to the ESP32 RGB LED and Relay control!");
+}
+
+// Handle LED 1 control
+void handleLed1() {
+    String redStr = server.arg("red");
+    String greenStr = server.arg("green");
+    String blueStr = server.arg("blue");
+    
+    int red = redStr.toInt();
+    int green = greenStr.toInt();
+    int blue = blueStr.toInt();
+    
+    setLedColor(led1PinRed, led1PinGreen, led1PinBlue, red, green, blue);
+    
+    String response = "LED 1 set to R:" + String(red) + " G:" + String(green) + " B:" + String(blue);
+    server.send(200, "text/plain", response);
+}
+
+// Handle LED 2 control
+void handleLed2() {
+    String redStr = server.arg("red");
+    String greenStr = server.arg("green");
+    String blueStr = server.arg("blue");
+    
+    int red = redStr.toInt();
+    int green = greenStr.toInt();
+    int blue = blueStr.toInt();
+    
+    setLedColor(led2PinRed, led2PinGreen, led2PinBlue, red, green, blue);
+    
+    String response = "LED 2 set to R:" + String(red) + " G:" + String(green) + " B:" + String(blue);
+    server.send(200, "text/plain", response);
+}
+
+// Handle Relay control
+void handleRelay() {
+    String state = server.arg("state"); // Expecting "ON" or "OFF"
+    
+    if (state == "ON") {
+        digitalWrite(relayPin, HIGH); // Turn relay ON
+        server.send(200, "text/plain", "Relay is ON");
+    } else if (state == "OFF") {
+        digitalWrite(relayPin, LOW); // Turn relay OFF
+        server.send(200, "text/plain", "Relay is OFF");
+    } else {
+        server.send(400, "text/plain", "Invalid relay state. Use ON or OFF.");
+    }
+}
+
+// Set RGB LED color
+void setLedColor(int redPin, int greenPin, int bluePin, int red, int green, int blue) {
+    analogWrite(redPin, red); // Set red LED
+    analogWrite(greenPin, green); // Set green LED
+    analogWrite(bluePin, blue); // Set blue LED
+}
+
+
+
+PYTHON CODE :
+import cv2
+import requests
+import mediapipe as mp
+
+# ESP32 configuration
+ESP32_IP = 'http://192.168.180.202'  # Replace with your ESP32's IP address
+
+# Initialize MediaPipe hands
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(min_detection_confidence=0.8, min_tracking_confidence=0.8)
+
+# Initialize video capture
+cap = cv2.VideoCapture(0)
+
+def control_led(gesture):
+    if gesture == "red":
+        requests.get(f"{ESP32_IP}/led2?red=255&green=0&blue=0")  # Control RGB LED 2 to Red
+    elif gesture == "blue":
+        requests.get(f"{ESP32_IP}/led2?red=0&green=0&blue=255")  # Control RGB LED 2 to Blue
+    elif gesture == "green":
+        requests.get(f"{ESP32_IP}/led2?red=0&green=255&blue=0")  # Control RGB LED 2 to Green
+    else:
+        requests.get(f"{ESP32_IP}/led2?red=0&green=0&blue=0")  # Turn off LED 2 if no gesture recognized
+
+# Capture and process frames
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    frame = cv2.flip(frame, 1)  # Mirror the frame for a more natural interaction
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = hands.process(rgb_frame)
+
+    if results.multi_hand_landmarks:
+        for hand_landmarks in results.multi_hand_landmarks:
+            thumb_tip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
+            index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            middle_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+            ring_tip = hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
+
+            # Calculate distances between finger tips
+            thumb_index_distance = ((thumb_tip.x - index_tip.x) ** 2 + (thumb_tip.y - index_tip.y) ** 2) ** 0.5
+            thumb_middle_distance = ((thumb_tip.x - middle_tip.x) ** 2 + (thumb_tip.y - middle_tip.y) ** 2) ** 0.5
+            thumb_ring_distance = ((thumb_tip.x - ring_tip.x) ** 2 + (thumb_tip.y - ring_tip.y) ** 2) ** 0.5
+            
+            # Check for gestures
+            if thumb_index_distance < 0.05:  # Thumb and index finger touch
+                control_led("red")
+                cv2.putText(frame, "Red", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            elif thumb_middle_distance < 0.05:  # Thumb and middle finger touch
+                control_led("blue")
+                cv2.putText(frame, "Blue", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+            elif thumb_ring_distance < 0.05:  # Thumb and ring finger touch
+                control_led("green")
+                cv2.putText(frame, "Green", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            else:
+                control_led("")  # Turn off LED 2 if no gesture recognized
+
+            # Draw hand landmarks
+            mp.solutions.drawing_utils.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+    cv2.imshow("Hand Gesture Control", frame)
+
+    # Press 'q' to quit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+
+
+
+ESP32 CODE :
+#include <WiFi.h>
+#include <WebServer.h>
+
+// Replace with your network credentials
+const char* ssid = "OPPO Reno11 5G";         // Your Wi-Fi SSID
+const char* password = "skull2005";  // Your Wi-Fi password
+
+WebServer server(80); // Create a web server on port 80
+
+// Pin configuration for RGB LEDs and Relay
+const int led1PinRed = 23;   // RGB LED 1 Red pin
+const int led1PinGreen = 22; // RGB LED 1 Green pin
+const int led1PinBlue = 21;  // RGB LED 1 Blue pin
+const int led2PinRed = 19;   // RGB LED 2 Red pin
+const int led2PinGreen = 18; // RGB LED 2 Green pin
+const int led2PinBlue = 15;  // RGB LED 2 Blue pin
+const int relayPin = 27;     // Relay control pin
+
+// Function prototypes
+void handleRoot();
+void handleLed1();
+void handleLed2();
+void handleRelay();
+void setLedColor(int redPin, int greenPin, int bluePin, int red, int green, int blue);
+
+void setup() {
+    Serial.begin(115200); // Start the Serial communication
+    WiFi.begin(ssid, password); // Connect to Wi-Fi
+
+    // Wait for connection
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.println("Connecting to WiFi...");
+    }
+    Serial.println("Connected to WiFi");
+
+    // Initialize LED and relay pins
+    pinMode(led1PinRed, OUTPUT);
+    pinMode(led1PinGreen, OUTPUT);
+    pinMode(led1PinBlue, OUTPUT);
+    pinMode(led2PinRed, OUTPUT);
+    pinMode(led2PinGreen, OUTPUT);
+    pinMode(led2PinBlue, OUTPUT);
+    pinMode(relayPin, OUTPUT);
+
+    // Add a delay to stabilize relay state
+    delay(500); // Half a second delay to stabilize
+    digitalWrite(relayPin, HIGH); // Set to HIGH to keep relay OFF (for active-low relays)
+
+    // Define routes for web server
+    server.on("/", handleRoot); // Handle root URL
+    server.on("/led1", handleLed1); // Handle LED 1 control
+    server.on("/led2", handleLed2); // Handle LED 2 control
+    server.on("/relay", handleRelay); // Handle Relay control
+
+    // Start the server
+    server.begin();
+    Serial.println("HTTP server started");
+}
+
+void loop() {
+    server.handleClient(); // Handle client requests
+}
+
+// Handle the root URL
+void handleRoot() {
+    server.send(200, "text/plain", "Welcome to the ESP32 RGB LED and Relay control!");
+}
+
+// Handle LED 1 control
+void handleLed1() {
+    String redStr = server.arg("red");
+    String greenStr = server.arg("green");
+    String blueStr = server.arg("blue");
+    
+    int red = redStr.toInt();
+    int green = greenStr.toInt();
+    int blue = blueStr.toInt();
+    
+    setLedColor(led1PinRed, led1PinGreen, led1PinBlue, red, green, blue);
+    
+    String response = "LED 1 set to R:" + String(red) + " G:" + String(green) + " B:" + String(blue);
+    server.send(200, "text/plain", response);
+}
+
+// Handle LED 2 control
+void handleLed2() {
+    String redStr = server.arg("red");
+    String greenStr = server.arg("green");
+    String blueStr = server.arg("blue");
+    
+    int red = redStr.toInt();
+    int green = greenStr.toInt();
+    int blue = blueStr.toInt();
+    
+    setLedColor(led2PinRed, led2PinGreen, led2PinBlue, red, green, blue);
+    
+    String response = "LED 2 set to R:" + String(red) + " G:" + String(green) + " B:" + String(blue);
+    server.send(200, "text/plain", response);
+}
+
+// Handle Relay control
+void handleRelay() {
+    String state = server.arg("state"); // Expecting "ON" or "OFF"
+    
+    if (state == "ON") {
+        digitalWrite(relayPin, LOW); // Turn relay ON (active-low)
+        server.send(200, "text/plain", "Relay is ON");
+    } else if (state == "OFF") {
+        digitalWrite(relayPin, HIGH); // Turn relay OFF (active-low)
+        server.send(200, "text/plain", "Relay is OFF");
+    } else {
+        server.send(400, "text/plain", "Invalid relay state. Use ON or OFF.");
+    }
+}
+
+// Set RGB LED color
+void setLedColor(int redPin, int greenPin, int bluePin, int red, int green, int blue) {
+    ledcWrite(redPin, red); // Set red LED
+    ledcWrite(greenPin, green); // Set green LED
+    ledcWrite(bluePin, blue); // Set blue LED
+}
+Arduino Uno
+const int irPin = 12;       // IR sensor connected to digital pin 12
+const int ledPin = 9;       // Green LED connected to digital pin 9
+const int buzzerPin = 8;    // Buzzer connected to digital pin 8
+const int rPin = 5;         // Red pin of RGB LED
+const int gPin = 6;         // Green pin of RGB LED
+const int bPin = 7;         // Blue pin of RGB LED
+
+void setup() {
+  pinMode(irPin, INPUT);
+  pinMode(ledPin, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(rPin, OUTPUT);
+  pinMode(gPin, OUTPUT);
+  pinMode(bPin, OUTPUT);
+
+  Serial.begin(9600); // Start serial communication
+
+  digitalWrite(buzzerPin, HIGH); // Keep the buzzer on
+}
+
+void loop() {
+  // IR Sensor Logic
+  int irValue = digitalRead(irPin);
+  
+  if (irValue == LOW) {             // IR sensor detects low in darkness
+    digitalWrite(ledPin, HIGH);     // Turn on LED at night
+  } else {
+    digitalWrite(ledPin, LOW);      // Turn off LED during the day
+  }
+
+  // RGB LED Control via Bluetooth
+  if (Serial.available() > 0) {
+    char command = Serial.read();
+    
+    Serial.print("Received command: ");  // For debugging
+    Serial.println(command);             // Print received command to Serial Monitor
+    
+    if (command == 'R') 
+    {
+      digitalWrite(rPin, HIGH);  // Red ON
+      digitalWrite(gPin, LOW);   // Green OFF
+      digitalWrite(bPin, LOW);   // Blue OFF
+    } 
+    else if (command == 'G') 
+    {
+      digitalWrite(rPin, LOW);   // Red OFF
+      digitalWrite(gPin, HIGH);  // Green ON
+      digitalWrite(bPin, LOW);   // Blue OFF
+    } 
+    else if (command == 'B') 
+    {
+      digitalWrite(rPin, LOW);   // Red OFF
+      digitalWrite(gPin, LOW);   // Green OFF
+      digitalWrite(bPin, HIGH);  // Blue ON
+    } 
+    else if (command == 'OFF ONE')
+    {
+       digitalWrite(rPin, LOW);   // Red OFF
+      digitalWrite(gPin, LOW);   // Green OFF
+      digitalWrite(bPin, LOW);  // Blue OFF
+    }
+    else 
+    {
+      // Turn off all colors if an unknown command is received
+      digitalWrite(rPin, LOW);
+      digitalWrite(gPin, LOW);
+      digitalWrite(bPin, LOW);
+    }
+  }
+  
+  delay(200); // Short delay for smoother response time
+}
+
+
